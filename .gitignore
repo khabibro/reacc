@@ -16,6 +16,7 @@ results/
 
 # Model checkpoints
 checkpoints/
+py150-ckpt/
 *.bin
 *.pt
 *.pth

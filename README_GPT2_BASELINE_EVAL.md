@@ -1,28 +1,30 @@
-# GPT-2 Baseline Evaluation
+# GPT-2 PY150 Baseline Evaluation
 
-This repo includes a small workflow for evaluating the GPT-2 baseline row for ReACC/CodeXGLUE line-level code completion.
+This workflow evaluates the GPT-2 baseline for the ReACC/CodeXGLUE line-level code completion task on PY150.
 
-It evaluates the full official test sets:
+It follows the original ReACC README convention:
 
-- PY150: 10,000 samples
-- JavaCorpus: 3,000 samples
+```bash
+DATADIR=dataset/py150
+PRETRAINDIR=py150-ckpt
+```
 
-The final table is saved as:
+The PY150 test set has 10,000 samples. The final PY150 table is saved as:
 
 - `results/gpt2_baseline_table.md`
 - `results/gpt2_baseline_table.csv`
 
 ## Important Checkpoint Note
 
-For paper-comparable numbers, use the fine-tuned GPT-2 checkpoints for PY150 and JavaCorpus.
+The ReACC README expects `PRETRAINDIR=py150-ckpt`, meaning a GPT-2 checkpoint fine-tuned for PY150 code completion. Raw/base GPT-2 is not the paper baseline and can produce meaningless scores.
 
-The helper script can download base GPT-2 into `checkpoints/gpt2`, but base GPT-2 is only useful for a sanity run. It will not reproduce the paper row:
+Paper reference row:
 
-| Model | PY150 (Perplexity) | PY150 (Exact Match) | PY150 (Edit Sim) | JavaCorpus (Perplexity) | JavaCorpus (Exact Match) | JavaCorpus (Edit Sim) |
-|---|---:|---:|---:|---:|---:|---:|
-| GPT-2 | - | 41.73 | 70.60 | - | 27.50 | 60.36 |
+| Model | PY150 (Perplexity) | PY150 (Exact Match) | PY150 (Edit Sim) |
+|---|---:|---:|---:|
+| GPT-2 | - | 41.73 | 70.60 |
 
-Perplexity is `-` because the line-level GPT-2 table reports Exact Match and Edit Similarity, not perplexity.
+Perplexity is `-` because the line-level CodeXGLUE/ReACC table reports Exact Match and Edit Similarity, not perplexity.
 
 ## 1. Create Environment
 
@@ -40,7 +42,7 @@ pip install torch --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements-gpt2-eval.txt
 ```
 
-If your GPU host uses CUDA 12.1 instead of CUDA 12.4, install PyTorch with:
+If your GPU host uses CUDA 12.1 instead of CUDA 12.4:
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cu121
@@ -71,7 +73,7 @@ pip install -r requirements-gpt2-eval.txt
 
 The patched evaluator automatically chooses `cuda`, then Apple `mps`, then `cpu`.
 
-## 2. Prepare Datasets And Optional Base GPT-2
+## 2. Prepare PY150 Dataset
 
 This downloads the CodeXGLUE line-completion test files and copies them into the layout expected by ReACC.
 
@@ -80,61 +82,52 @@ cd /path/to/ReACC
 ./scripts/prepare_gpt2_eval.sh
 ```
 
-Expected dataset counts:
+Expected PY150 count:
 
 ```text
 10000 dataset/py150/test.json
- 3000 dataset/javaCorpus/test.json
 ```
 
-By default, the script also downloads base GPT-2 into `checkpoints/gpt2`. To skip that download:
+## 3. Add The Fine-Tuned GPT-2 Checkpoint
 
-```bash
-DOWNLOAD_BASE_GPT2=0 ./scripts/prepare_gpt2_eval.sh
+Place or download your PY150-fine-tuned GPT-2 checkpoint at:
+
+```text
+py150-ckpt/
 ```
 
-## 3. Set Checkpoints
+It must contain Hugging Face GPT-2 checkpoint files such as:
 
-For exact paper-style reproduction, point these variables to the fine-tuned GPT-2 checkpoints:
+```text
+py150-ckpt/config.json
+py150-ckpt/pytorch_model.bin
+py150-ckpt/vocab.json
+py150-ckpt/merges.txt
+```
+
+By default, `./scripts/prepare_gpt2_eval.sh` will auto-download the public Py150 checkpoint from Hugging Face into `py150-ckpt/`.
+
+If your checkpoint is somewhere else, set:
 
 ```bash
 export PY150_GPT2_CKPT=/absolute/path/to/py150-finetuned-gpt2
-export JAVA_GPT2_CKPT=/absolute/path/to/java-finetuned-gpt2
 ```
 
-For a base-GPT-2 sanity run:
+Important: the public Hugging Face model `AISE-TUDelft/CodeGPT-Py150` is available online and is a usable Py150 checkpoint, but I could not verify that it is the exact checkpoint used in the paper. Use it as the local checkpoint unless you have the original paper weights.
 
-```bash
-export PY150_GPT2_CKPT=checkpoints/gpt2
-export JAVA_GPT2_CKPT=checkpoints/gpt2
-```
+## 4. Run PY150 Evaluation
 
-## 4. Run Evaluations
-
-The evaluator writes predictions incrementally and resumes automatically from an existing prediction file. If a run is interrupted, rerun the same command.
-
-### CUDA Host
-
-Run both datasets sequentially:
+CUDA foreground run:
 
 ```bash
 cd /path/to/ReACC
 source .venv/bin/activate
 export CUDA_VISIBLE_DEVICES=0
 
-./scripts/run_gpt2_eval.sh both
-```
-
-Or run one dataset:
-
-```bash
 ./scripts/run_gpt2_eval.sh py150
-./scripts/run_gpt2_eval.sh java
 ```
 
-### Mac Background Run
-
-On Mac, run one dataset at a time.
+Mac background run:
 
 ```bash
 cd /Users/admin/Research/ReACC
@@ -144,16 +137,24 @@ BACKGROUND=1 ./scripts/run_gpt2_eval.sh py150
 tail -f logs/gpt2_py150_line.log
 ```
 
-After PY150 finishes:
+The evaluator writes predictions incrementally and resumes automatically from `save/py150/gpt2_predictions.txt`. If a run is interrupted, rerun the same command.
 
-```bash
-BACKGROUND=1 ./scripts/run_gpt2_eval.sh java
-tail -f logs/gpt2_java_line.log
+The run is complete when the log contains:
+
+```text
+Test 10000 samples
+Edit sim: ..., EM: ...
 ```
 
-## 5. Extract And Save Final Table
+For exact paper-style scoring, also pass the official PY150 answer file if you have it:
 
-Run this after both logs contain their final `Edit sim` and `EM` lines.
+```bash
+PY150_ANSWERS_FILE=/path/to/answers.jsonl ./scripts/run_gpt2_eval.sh py150
+```
+
+Without that file, the repo can still generate predictions, but the exact EM/Edit Sim row will not match the paper because the public `test.json` in this checkout has empty `gt` fields.
+
+## 5. Extract And Save PY150 Result
 
 ```bash
 cd /path/to/ReACC
@@ -169,6 +170,19 @@ results/gpt2_baseline_table.md
 results/gpt2_baseline_table.csv
 ```
 
+## Base GPT-2 Sanity Run Only
+
+Raw/base GPT-2 is blocked by default to prevent accidentally reporting invalid results.
+
+To run it only as a sanity check:
+
+```bash
+DOWNLOAD_BASE_GPT2=1 ./scripts/prepare_gpt2_eval.sh
+ALLOW_BASE_GPT2=1 PY150_GPT2_CKPT=checkpoints/gpt2 ./scripts/run_gpt2_eval.sh py150
+```
+
+Do not compare that result to the paper row.
+
 ## Useful Checks
 
 Check active runs:
@@ -181,18 +195,16 @@ Watch logs:
 
 ```bash
 tail -f logs/gpt2_py150_line.log
-tail -f logs/gpt2_java_line.log
 ```
 
-Check prediction counts:
+Check prediction count:
 
 ```bash
-wc -l save/py150/gpt2_predictions.txt save/javaCorpus/gpt2_predictions.txt
+wc -l save/py150/gpt2_predictions.txt
 ```
 
-Expected completed counts:
+Expected completed count:
 
 ```text
 10000 save/py150/gpt2_predictions.txt
- 3000 save/javaCorpus/gpt2_predictions.txt
 ```

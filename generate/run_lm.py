@@ -135,7 +135,7 @@ def eval_ppl(args, model, tokenizer, file_type='test', load_file="train", res_fi
     for key in sorted(result.keys()):
         logger.info("  %s = %s", key, str(result[key]))
 
-def eval_line_completion(args, model, tokenizer, file_type='test', load_file=None, res_file=None, save_name=None):
+def eval_line_completion(args, model, tokenizer, file_type='test', load_file=None, res_file=None, save_name=None, answers_file=None):
     """
     Evaluate line level code completion on exact match and edit similarity.
 
@@ -168,6 +168,12 @@ def eval_line_completion(args, model, tokenizer, file_type='test', load_file=Non
             load_file=load_file, 
             search_res=res_file, 
         )
+    answers = None
+    if answers_file:
+        with open(answers_file) as f:
+            answers = [json.loads(line)["gt"] for line in f]
+        assert len(answers) == len(dataset), f"answers_file length {len(answers)} != dataset length {len(dataset)}"
+
     test_sampler = SequentialSampler(dataset)
     test_dataloader = DataLoader(dataset, sampler=test_sampler, batch_size=1)
     model.to(args.device)
@@ -195,7 +201,7 @@ def eval_line_completion(args, model, tokenizer, file_type='test', load_file=Non
             preds = [line.rstrip("\n") for line in f]
         resume_count = min(len(preds), len(dataset))
         for i, text in enumerate(preds[:resume_count]):
-            gt = dataset.gts[i]
+            gt = answers[i] if answers is not None else dataset.gts[i]
             edit_sim += fuzz.ratio(text, gt)
             em += 1 if text == gt else 0
         logger.warning(f"Resuming from {resume_count} existing predictions")
@@ -241,9 +247,10 @@ def eval_line_completion(args, model, tokenizer, file_type='test', load_file=Non
                 else:
                     text = DecodeIds(t).strip("{").strip()
                 preds.append(text)
-                gts.append(gt[0])
-                edit_sim += fuzz.ratio(text, gt[0])
-                em += 1 if text == gt[0] else 0
+                ref_gt = answers[step] if answers is not None else gt[0]
+                gts.append(ref_gt)
+                edit_sim += fuzz.ratio(text, ref_gt)
+                em += 1 if text == ref_gt else 0
                 if pred_file:
                     pred_file.write(text+"\n")
                     pred_file.flush()
@@ -275,6 +282,8 @@ def main():
                         help="file that saves search results")
     parser.add_argument("--save_name", default=None, type=str,
                         help="file to save model predictions")
+    parser.add_argument("--answers_file", default=None, type=str,
+                        help="optional jsonl file with gt labels for exact line-level evaluation")
 
     ## Other parameters
     parser.add_argument("--model_type", default="gpt2", type=str,
@@ -359,7 +368,8 @@ def main():
             file_type="test", 
             load_file=args.load_file_name, 
             res_file=args.search_res, 
-            save_name=args.save_name
+            save_name=args.save_name,
+            answers_file=args.answers_file,
         )
 
 
