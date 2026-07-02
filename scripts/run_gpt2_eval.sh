@@ -35,6 +35,10 @@ run_one() {
 
   mkdir -p "$output_dir" "$(dirname "$log_file")" results
 
+  if [ ! -d "$ckpt" ] && [ -d "$ckpt/checkpoint-last" ]; then
+    ckpt="$ckpt/checkpoint-last"
+  fi
+
   if [ "$AUTO_DOWNLOAD_PY150_CKPT" = "1" ] && [ "$ckpt" = "py150-ckpt" ] && [ ! -d "$ckpt" ]; then
     echo "Auto-downloading public PY150 checkpoint from $PY150_GPT2_REPO into $ckpt..."
     PY150_GPT2_REPO="$PY150_GPT2_REPO" "$PYTHON_BIN" - <<'PY'
@@ -57,11 +61,43 @@ PY
     return 1
   fi
 
+  if [ ! -f "$ckpt/pytorch_model.bin" ] && [ ! -f "$ckpt/model.safetensors" ] && [ -d "$ckpt/checkpoint-last" ]; then
+    ckpt="$ckpt/checkpoint-last"
+  fi
+
   if [ "$ckpt" = "checkpoints/gpt2" ] && [ "$ALLOW_BASE_GPT2" != "1" ]; then
     echo "Refusing to evaluate raw base GPT-2 at checkpoints/gpt2." >&2
     echo "The ReACC/CodeXGLUE GPT-2 row requires a fine-tuned checkpoint such as py150-ckpt." >&2
     echo "For a sanity run only, rerun with ALLOW_BASE_GPT2=1." >&2
     return 1
+  fi
+
+  if [ -z "$PY150_ANSWERS_FILE" ]; then
+    "$PYTHON_BIN" - "$data_dir/test.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    raise SystemExit(f"Missing test file: {path}")
+
+nonempty = 0
+total = 0
+with path.open() as f:
+    for line in f:
+        if not line.strip():
+            continue
+        total += 1
+        if json.loads(line).get("gt"):
+            nonempty += 1
+
+if total and nonempty == 0:
+    raise SystemExit(
+        "The public PY150 test.json has empty gt labels. "
+        "Set PY150_ANSWERS_FILE=/path/to/official_answers.jsonl before running exact scoring."
+    )
+PY
   fi
 
   if pgrep -f "generate/run_lm.py .*--data_dir=$data_dir" >/dev/null; then

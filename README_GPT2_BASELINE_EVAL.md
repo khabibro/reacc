@@ -30,6 +30,51 @@ Perplexity is `-` because the line-level CodeXGLUE/ReACC table reports Exact Mat
 
 Run from the ReACC repo root.
 
+### Linux Conda Environment `llm`
+
+If you already created a conda environment named `llm`, use this setup:
+
+```bash
+cd /path/to/reacc
+conda activate llm
+
+pip install --upgrade pip
+pip install torch --index-url https://download.pytorch.org/whl/cu124
+pip install -r requirements-gpt2-eval.txt
+
+chmod +x scripts/prepare_gpt2_eval.sh \
+  scripts/train_gpt2_py150.sh \
+  scripts/run_gpt2_eval.sh \
+  scripts/extract_gpt2_results.py \
+  scripts/full_gpt2_py150_pipeline.sh
+```
+
+If your machine uses CUDA 12.1 instead of CUDA 12.4, replace the PyTorch install line with:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+```
+
+Then run the full train-and-evaluate pipeline:
+
+```bash
+PY150_ANSWERS_FILE=/absolute/path/to/py150_answers.jsonl PER_NODE_GPU=1 ./scripts/full_gpt2_py150_pipeline.sh
+```
+
+For multi-GPU training:
+
+```bash
+PY150_ANSWERS_FILE=/absolute/path/to/py150_answers.jsonl PER_NODE_GPU=4 ./scripts/full_gpt2_py150_pipeline.sh
+```
+
+The official/public CodeXGLUE line-completion `test.json` in this checkout has empty `gt` labels. The pipeline can train the model without the answer file, but exact EM/Edit Similarity extraction requires `PY150_ANSWERS_FILE`.
+
+To only train the GPT-2 checkpoint first:
+
+```bash
+PER_NODE_GPU=1 ./scripts/train_gpt2_py150.sh
+```
+
 ### CUDA Laptop Or Workstation
 
 ```bash
@@ -115,7 +160,31 @@ export PY150_GPT2_CKPT=/absolute/path/to/py150-finetuned-gpt2
 
 Important: the public Hugging Face model `AISE-TUDelft/CodeGPT-Py150` is available online and is a usable Py150 checkpoint, but I could not verify that it is the exact checkpoint used in the paper. Use it as the local checkpoint unless you have the original paper weights.
 
-## 4. Run PY150 Evaluation
+## 4. Fine-Tune GPT-2 On PY150
+
+This repo now includes a helper that reproduces the CodeXGLUE PY150 fine-tuning recipe and copies the final checkpoint into `py150-ckpt/`.
+
+```bash
+cd /Users/admin/Research/reacc
+source .venv/bin/activate
+
+./scripts/train_gpt2_py150.sh
+```
+
+The script:
+
+- downloads the base `gpt2` checkpoint if needed
+- downloads and preprocesses CodeXGLUE PY150 token-completion data
+- fine-tunes GPT-2 with the paper settings
+- copies the final `checkpoint-last` into `py150-ckpt/`
+
+If you want the public Py150 checkpoint instead of retraining, keep using:
+
+```bash
+./scripts/prepare_gpt2_eval.sh
+```
+
+## 5. Run PY150 Evaluation
 
 CUDA foreground run:
 
@@ -152,9 +221,9 @@ For exact paper-style scoring, also pass the official PY150 answer file if you h
 PY150_ANSWERS_FILE=/path/to/answers.jsonl ./scripts/run_gpt2_eval.sh py150
 ```
 
-Without that file, the repo can still generate predictions, but the exact EM/Edit Sim row will not match the paper because the public `test.json` in this checkout has empty `gt` fields.
+Without that file, the evaluator refuses to report EM/Edit Sim because the public `test.json` in this checkout has empty `gt` fields.
 
-## 5. Extract And Save PY150 Result
+## 6. Extract And Save PY150 Result
 
 ```bash
 cd /path/to/ReACC

@@ -6,6 +6,8 @@ from pathlib import Path
 
 
 def extract_line_metrics(path: Path):
+    if not path.exists():
+        raise SystemExit(f"Missing log file: {path}. Run scripts/run_gpt2_eval.sh py150 first.")
     text = path.read_text(errors="ignore")
     matches = re.findall(r"Edit sim:\s*([0-9.]+),\s*EM:\s*([0-9.]+)", text)
     if not matches:
